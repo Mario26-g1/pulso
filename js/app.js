@@ -10,7 +10,7 @@ import { SignaturePad } from './sign.js';
 import { recognize, findDni, ocrCached, preloadOcr } from './ocr.js';
 import { QUALITY, buildPdf, buildJpgs, mergePdfFiles } from './pdf.js';
 
-const VERSION = '2.2';
+const VERSION = '2.3';
 
 /* =================================================================== */
 /* Navegación: pila de pantallas y hojas, integrada con el botón atrás */
@@ -313,14 +313,40 @@ async function shoot() {
   const f = $('#camFlash'); f.classList.add('on'); setTimeout(() => f.classList.remove('on'), 60);
   vibrate(18);
   try {
-    // Zona donde está el documento, en proporciones del cuadro de video: se usa para buscarlo en la foto.
-    const v = cam.video, vw = v.videoWidth, vh = v.videoHeight;
+    // Lo que se ve en pantalla (el video se muestra recortado) y la zona del documento,
+    // ambos en proporciones del cuadro de video.
+    const v = cam.video, vw = v.videoWidth, vh = v.videoHeight, m = coverMap();
+    const visible = {
+      x0: clamp(-m.ox / m.s, 0, vw) / vw, y0: clamp(-m.oy / m.s, 0, vh) / vh,
+      x1: clamp((m.cw - m.ox) / m.s, 0, vw) / vw, y1: clamp((m.ch - m.oy) / m.s, 0, vh) / vh, va: vw / vh
+    };
     let zone = null;
     if (live.quad) zone = quadBox(live.quad);
     else if (session.kind === 'dni') zone = guideInVideo();
-    const hint = zone && vw ? { x0: zone.x0 / vw, y0: zone.y0 / vh, x1: zone.x1 / vw, y1: zone.y1 / vh, va: vw / vh, fromQuad: !!live.quad } : null;
+    const zoneN = zone ? { x0: zone.x0 / vw, y0: zone.y0 / vh, x1: zone.x1 / vw, y1: zone.y1 / vh, va: vw / vh } : null;
     const photo = await cam.capture();
-    openCrop({ src: photo, kind: session.kind, side: session.side, mode: 'new', origin: 'camera', queue: [], hint });
+    // La cámara suele fotografiar un encuadre más amplio que la vista previa:
+    // se recorta la foto a lo que se vio en pantalla.
+    const W = photo.width, H = photo.height;
+    const vis = hintToPhoto(visible, W, H);
+    const pad = 0.03, vw2 = vis.x1 - vis.x0, vh2 = vis.y1 - vis.y0;
+    const cx0 = Math.round(clamp(vis.x0 - vw2 * pad, 0, W)), cy0 = Math.round(clamp(vis.y0 - vh2 * pad, 0, H));
+    const cx1 = Math.round(clamp(vis.x1 + vw2 * pad, 0, W)), cy1 = Math.round(clamp(vis.y1 + vh2 * pad, 0, H));
+    let src = photo;
+    if (cx1 - cx0 > 50 && cy1 - cy0 > 50 && (cx1 - cx0 < W - 2 || cy1 - cy0 < H - 2)) {
+      src = mk(cx1 - cx0, cy1 - cy0);
+      src.getContext('2d').drawImage(photo, cx0, cy0, src.width, src.height, 0, 0, src.width, src.height);
+    }
+    let hint = null;
+    if (zoneN) {
+      const z = hintToPhoto(zoneN, W, H);
+      hint = {
+        x0: (z.x0 - cx0) / src.width, y0: (z.y0 - cy0) / src.height,
+        x1: (z.x1 - cx0) / src.width, y1: (z.y1 - cy0) / src.height,
+        va: src.width / src.height, fromQuad: !!live.quad
+      };
+    }
+    openCrop({ src, kind: session.kind, side: session.side, mode: 'new', origin: 'camera', queue: [], hint });
   } catch { toast('No se pudo tomar la foto. Inténtalo otra vez.', 'err'); }
   finally { live.shooting = false; live.stable = 0; $('#camShutter').disabled = false; }
 }
