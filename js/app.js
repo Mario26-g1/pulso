@@ -1,7 +1,7 @@
 // Copia Clara · lógica principal.
 
 import { $, $$, uid, nextFrame, mk, canvasToBlob, blobToCanvas, fmtBytes, fmtWhen, todayPE, slugify, toast, download, shareFiles, canShareFiles, settings, vibrate } from './utils.js';
-import { KINDS, detectQuad, refineQuad, defaultQuad, orderQuad, polyArea, dist, homography } from './geometry.js';
+import { KINDS, detectQuad, detectAt, refineQuad, defaultQuad, orderQuad, polyArea, dist, homography } from './geometry.js';
 import { FILTERS, DEFAULT_FILTER, forOcr } from './enhance.js';
 import { store, initStore, isPersistent, setPersistent } from './store.js';
 import { renderPage, makeThumb, getSource, ocrImage, ocrKey, forget, forgetSig } from './render.js';
@@ -10,7 +10,7 @@ import { SignaturePad } from './sign.js';
 import { recognize, findDni, ocrCached, preloadOcr } from './ocr.js';
 import { QUALITY, buildPdf, buildJpgs, mergePdfFiles } from './pdf.js';
 
-const VERSION = '2.0';
+const VERSION = '2.1';
 
 /* =================================================================== */
 /* Navegación: pila de pantallas y hojas, integrada con el botón atrás */
@@ -349,7 +349,7 @@ async function openCrop(opts, how = 'push') {
       $('#cropHint').textContent = 'Bordes detectados. Revisa las esquinas antes de continuar.';
     } else {
       crop.quad = defaultQuad(crop.src.width, crop.src.height, crop.kind);
-      $('#cropHint').textContent = 'No encontré los bordes. Arrastra los puntos a las esquinas del documento.';
+      $('#cropHint').textContent = 'No lo detecté solo. Toca el documento en la foto, o arrastra los puntos a sus esquinas.';
     }
   } else $('#cropHint').textContent = 'Arrastra los puntos a las esquinas. Al arrastrar aparece una lupa.';
   layoutCrop();
@@ -402,13 +402,16 @@ function drawCrop() {
 }
 
 const evPt = e => { const r = stage.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+let tapStart = null;
 stage.addEventListener('pointerdown', e => {
-  if (!crop) return;
+  if (!crop || !crop.quad) return;
   const p = evPt(e);
   let best = -1, bd = 40;
   crop.quad.forEach((c, i) => { const d = Math.hypot(c.x * view.k - p.x, c.y * view.k - p.y); if (d < bd) { bd = d; best = i; } });
-  if (best < 0) return;
-  dragIdx = best; stage.setPointerCapture(e.pointerId); e.preventDefault(); drawCrop();
+  stage.setPointerCapture(e.pointerId);
+  e.preventDefault();
+  if (best < 0) { tapStart = { ...p, t: performance.now() }; return; }
+  dragIdx = best; drawCrop();
 });
 stage.addEventListener('pointermove', e => {
   if (dragIdx < 0 || !crop) return;
@@ -416,9 +419,33 @@ stage.addEventListener('pointermove', e => {
   crop.quad[dragIdx] = { x: Math.min(crop.src.width, Math.max(0, p.x / view.k)), y: Math.min(crop.src.height, Math.max(0, p.y / view.k)) };
   drawCrop();
 });
-const endDrag = () => { if (dragIdx >= 0) { dragIdx = -1; drawCrop(); } };
+const endDrag = e => {
+  if (dragIdx >= 0) { dragIdx = -1; drawCrop(); return; }
+  if (tapStart && e && e.type === 'pointerup') {
+    const p = evPt(e);
+    if (Math.hypot(p.x - tapStart.x, p.y - tapStart.y) < 12 && performance.now() - tapStart.t < 800) tapDetect(p);
+  }
+  tapStart = null;
+};
 stage.addEventListener('pointerup', endDrag);
 stage.addEventListener('pointercancel', endDrag);
+
+async function tapDetect(p) {
+  if (!crop) return;
+  const x = p.x / view.k, y = p.y / view.k;
+  $('#cropHint').textContent = 'Buscando el documento donde tocaste…';
+  await nextFrame();
+  const r = detectAt(crop.src, crop.src.width, crop.src.height, x, y, crop.kind);
+  if (!crop) return;
+  if (r) {
+    crop.quad = orderQuad(refineQuad(crop.src, crop.src.width, crop.src.height, orderQuad(r.quad)));
+    $('#cropHint').textContent = 'Listo. Revisa las esquinas; si algo quedó fuera, arrastra el punto.';
+    vibrate(10);
+  } else {
+    $('#cropHint').textContent = 'No encontré un borde claro ahí. Toca en otra parte del documento o arrastra los puntos.';
+  }
+  drawCrop();
+}
 new ResizeObserver(() => { if (crop) layoutCrop(); }).observe($('#cropBox'));
 
 $('#cropRotate').addEventListener('click', () => {
@@ -436,13 +463,18 @@ $('#cropDetect').addEventListener('click', () => {
   if (r) {
     crop.quad = orderQuad(refineQuad(crop.src, crop.src.width, crop.src.height, orderQuad(r.quad)));
     $('#cropHint').textContent = 'Bordes detectados. Revisa las esquinas antes de continuar.';
-  } else toast('No encontré los bordes. Ajusta las esquinas a mano.');
+  } else toast('No lo detecté solo. Toca el documento en la foto.');
   drawCrop();
 });
 $('#cropFull').addEventListener('click', () => {
   if (!crop) return;
   const w = crop.src.width, h = crop.src.height;
   crop.quad = [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }];
+  if (crop.kind === 'dni') {
+    const b = $('#cropKind .seg-btn[data-v=free]');
+    if (b) b.click();
+    toast('Cambié el tipo a «Libre» para no deformar la foto.');
+  }
   drawCrop();
 });
 $('#cropSkip').addEventListener('click', () => nextInQueue());

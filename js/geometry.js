@@ -99,10 +99,9 @@ export function warpImageData(sd, quad, W, H) {
 
 export function defaultQuad(w, h, kind) {
   if (kind === 'dni') {
-    // Recuadro guía con la proporción de la tarjeta, centrado.
-    const r = 85.6 / 54, land = w >= h;
-    let qw = w * 0.78, qh = land ? qw / r : qw * r;
-    if (qh > h * 0.78) { qh = h * 0.78; qw = land ? qh * r : qh / r; }
+    // Tarjeta horizontal centrada, de un tamaño razonable para ajustarla rápido.
+    const r = 85.6 / 54;
+    let qw = Math.min(w * 0.7, h * 0.5 * r), qh = qw / r;
     const x0 = (w - qw) / 2, y0 = (h - qh) / 2;
     return [{ x: x0, y: y0 }, { x: x0 + qw, y: y0 }, { x: x0 + qw, y: y0 + qh }, { x: x0, y: y0 + qh }];
   }
@@ -233,7 +232,7 @@ function aspectFactor(q, aspect) {
   const w = (dist(q[0], q[1]) + dist(q[3], q[2])) / 2, h = (dist(q[0], q[3]) + dist(q[1], q[2])) / 2;
   const ar = Math.max(w, h) / Math.max(1, Math.min(w, h));
   const off = Math.abs(Math.log(ar / aspect.r));
-  return off < aspect.tol ? 1 : Math.max(0.3, 1 - (off - aspect.tol) * aspect.slope);
+  return off < aspect.tol ? 1 : Math.max(0.78, 1 - (off - aspect.tol) * aspect.slope);
 }
 
 function angleOk(q) {
@@ -247,7 +246,7 @@ function angleOk(q) {
   return true;
 }
 
-function scoreComponent(lab, id, size, W, H, aspect) {
+function scoreComponent(lab, id, size, W, H, aspect, tap = false) {
   const minX = new Int32Array(H).fill(W), maxX = new Int32Array(H).fill(-1);
   for (let y = 0; y < H; y++) {
     const r = y * W;
@@ -263,7 +262,7 @@ function scoreComponent(lab, id, size, W, H, aspect) {
   if (!q0) return null;
   const q = orderQuad(q0);
   const qa = polyArea(q), N = W * H, frac = qa / N;
-  if (frac < 0.022 || frac > 0.975) return null;
+  if (frac < (tap ? 0.004 : 0.022) || frac > 0.975) return null;
   if (!angleOk(q)) return null;
   const e = 2.2;
   const edge = q.filter(p => p.x < e || p.y < e || p.x > W - e || p.y > H - e).length;
@@ -392,7 +391,7 @@ export function refineQuad(source, sw, sh, quad, maxDim = 1400) {
  * `maxDim` controla la resolución de trabajo (más alta = más precisa y más lenta).
  */
 export function detectQuad(source, sw, sh, maxDim = 480, kind = null) {
-  const aspect = kind === 'dni' ? { r: 85.6 / 54, tol: 0.1, slope: 2.6 }
+  const aspect = kind === 'dni' ? { r: 85.6 / 54, tol: 0.14, slope: 0.9 }
     : kind === 'a4' ? { r: 297 / 210, tol: 0.2, slope: 1.4 }
     : kind === 'letter' ? { r: 279.4 / 215.9, tol: 0.2, slope: 1.4 } : null;
   if (!sw || !sh) return null;
@@ -440,4 +439,78 @@ export function detectQuad(source, sw, sh, maxDim = 480, kind = null) {
   }
   if (!best || best.score < 0.55) return null;
   return { quad: best.quad.map(p => ({ x: clamp(p.x / k, 0, sw), y: clamp(p.y / k, 0, sh) })), score: best.score };
+}
+
+/**
+ * Detección a partir de un toque: crece una región desde el punto tocado
+ * con varias tolerancias de color y se queda con la forma más rectangular.
+ * Sirve con fondos estampados, donde la detección automática se confunde.
+ */
+export function detectAt(source, sw, sh, px, py, kind = null) {
+  const maxDim = 480, k = maxDim / Math.max(sw, sh);
+  const W = Math.max(16, Math.round(sw * k)), H = Math.max(16, Math.round(sh * k)), N = W * H;
+  const ctx = scratchCtx(W, H);
+  ctx.drawImage(source, 0, 0, W, H);
+  const d = ctx.getImageData(0, 0, W, H).data;
+  const R = new Uint8Array(N), G = new Uint8Array(N), B = new Uint8Array(N);
+  for (let i = 0, j = 0; i < N; i++, j += 4) { R[i] = d[j]; G[i] = d[j + 1]; B[i] = d[j + 2]; }
+  boxBlur(R, W, H); boxBlur(G, W, H); boxBlur(B, W, H);
+  boxBlur(R, W, H); boxBlur(G, W, H); boxBlur(B, W, H);
+  const cx = clamp(Math.round(px * k), 2, W - 3), cy = clamp(Math.round(py * k), 2, H - 3);
+  const aspect = kind === 'dni' ? { r: 85.6 / 54, tol: 0.14, slope: 0.9 }
+    : kind === 'a4' ? { r: 297 / 210, tol: 0.2, slope: 1.4 }
+    : kind === 'letter' ? { r: 279.4 / 215.9, tol: 0.2, slope: 1.4 } : null;
+  // El dedo puede caer sobre texto o una foto: se prueban también puntos alrededor.
+  const seeds = [[0, 0]];
+  for (const rr of [9, 18]) for (let a2 = 0; a2 < 8; a2++) seeds.push([Math.round(Math.cos(a2 * Math.PI / 4) * rr), Math.round(Math.sin(a2 * Math.PI / 4) * rr)]);
+  const tried = [];
+  let best = null;
+  const stack = new Int32Array(N);
+  for (const [ox, oy] of seeds) {
+    const sx = clamp(cx + ox, 2, W - 3), sy = clamp(cy + oy, 2, H - 3);
+    let r0 = 0, g0 = 0, b0 = 0, n = 0;
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+      const i = (sy + dy) * W + sx + dx; r0 += R[i]; g0 += G[i]; b0 += B[i]; n++;
+    }
+    r0 /= n; g0 /= n; b0 /= n;
+    if (tried.some(t => Math.abs(t[0] - r0) + Math.abs(t[1] - g0) + Math.abs(t[2] - b0) < 12)) continue;
+    tried.push([r0, g0, b0]);
+    for (const tol of [16, 24, 34, 46, 60]) {
+      const m = new Uint8Array(N);
+      let sp = 0, size = 0;
+      const seed = sy * W + sx;
+      m[seed] = 1; stack[sp++] = seed;
+      const lim = tol * 1.7;
+      const ok = i => Math.abs(R[i] - r0) + Math.abs(G[i] - g0) + Math.abs(B[i] - b0) < lim;
+      while (sp) {
+        const p = stack[--sp], x = p % W; size++;
+        if (x > 0 && !m[p - 1] && ok(p - 1)) { m[p - 1] = 1; stack[sp++] = p - 1; }
+        if (x < W - 1 && !m[p + 1] && ok(p + 1)) { m[p + 1] = 1; stack[sp++] = p + 1; }
+        if (p >= W && !m[p - W] && ok(p - W)) { m[p - W] = 1; stack[sp++] = p - W; }
+        if (p < N - W && !m[p + W] && ok(p + W)) { m[p + W] = 1; stack[sp++] = p + W; }
+      }
+      if (size < N * 0.004) continue;
+      if (size > N * 0.9) break;
+      const closed = erode(dilate(dilate(m, W, H), W, H), W, H);
+      const lab = new Int32Array(N);
+      let cnt = 0;
+      for (let i = 0; i < N; i++) if (closed[i]) { lab[i] = 1; cnt++; }
+      const r = scoreComponent(lab, 1, cnt, W, H, aspect, true);
+      // Debe contener el punto tocado (o quedar muy cerca).
+      if (r && pointIn(r.quad, cx, cy, 12) && (!best || r.score > best.score)) best = r;
+    }
+  }
+  if (!best || best.score < 0.45) return null;
+  return { quad: best.quad.map(p => ({ x: clamp(p.x / k, 0, sw), y: clamp(p.y / k, 0, sh) })), score: best.score };
+}
+
+function pointIn(q, x, y, margin = 0) {
+  let inside = true;
+  for (let i = 0; i < 4; i++) {
+    const a = q[i], b = q[(i + 1) % 4];
+    const cr = (b.x - a.x) * (y - a.y) - (b.y - a.y) * (x - a.x);
+    const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    if (cr / len < -margin) inside = false;
+  }
+  return inside;
 }
