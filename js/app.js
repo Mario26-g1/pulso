@@ -1503,7 +1503,7 @@ $('#ocrGo').addEventListener('click', async () => {
 function openSettings() {
   $('#setSave').checked = isPersistent();
   $('#setAutoName').checked = settings.get('autoName', true);
-  $('#setVersion').textContent = `Copia Clara ${VERSION} · ${navigator.onLine ? 'con conexión' : 'sin conexión'}`;
+  $('#setVersion').textContent = `Copia Clara v${VERSION} · ${navigator.onLine ? 'con conexión' : 'sin conexión'}`;
   Nav.push('sh-settings');
 }
 $('#setSave').addEventListener('change', async e => {
@@ -1670,6 +1670,10 @@ document.addEventListener('keydown', e => {
 
 (async function boot() {
   await initStore(settings.get('save', true));
+  $('#homeVersion').textContent = `v${VERSION}`;
+  const seen = settings.get('seenVersion', null);
+  if (seen && seen !== VERSION) setTimeout(() => toast(`Copia Clara se actualizó a la v${VERSION}.`), 600);
+  settings.set('seenVersion', VERSION);
   switchTab('home');
   await renderHome();
   const scan = new URLSearchParams(location.search).get('scan');
@@ -1684,7 +1688,7 @@ document.addEventListener('keydown', e => {
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       if (reloaded || !hadController) return;
       reloaded = true;
-      toast('Copia Clara se actualizó. Los cambios se ven la próxima vez que la abras.');
+      toast('Hay una versión nueva descargada. Cierra y vuelve a abrir la app para usarla.');
     });
   }
 })();

@@ -51,6 +51,7 @@ h1,h2,h3{margin:0;text-wrap:balance}
 .appbar h1{font-size:22px;font-weight:700;letter-spacing:-.02em;flex:1}
 .appbar-title{flex:1;font-size:17px;font-weight:600;padding-left:2px}
 .brand{display:flex;align-items:center;gap:10px;flex:1}
+.ver-chip{font:600 12px/1 var(--mono,monospace);padding:5px 8px;border-radius:999px;background:var(--accent-soft,rgba(21,122,90,.12));color:var(--accent,#157a5a);letter-spacing:.02em}
 .logo{width:32px;height:32px;color:var(--ink)}
 .logo-beam{fill:var(--accent)}
 .icon-btn{width:44px;height:44px;border-radius:12px;border:0;background:transparent;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;color:var(--ink);flex:none}
