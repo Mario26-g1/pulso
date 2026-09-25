@@ -1,4 +1,4 @@
-# Copia Clara 2.5
+# Copia Clara 2.6
 
 Escáner de DNI y documentos que funciona dentro del celular. Las fotos, el texto leído y los PDF se procesan en el propio teléfono: no hay servidor, cuentas ni publicidad.
 
@@ -43,7 +43,7 @@ La primera vez que lees texto, la app descarga el lector en español (unos 6 MB)
 
 ## Actualizar el código en el futuro
 
-Si cambias cualquier archivo, abre `sw.js` y sube el número de `VERSION` (por ejemplo, de `'v2.0.0'` a `'v2.0.1'`). Sin ese paso, los celulares siguen usando la versión guardada.
+La app busca primero la versión más nueva en internet, así que los cambios se ven al abrirla. Igual, cada vez que cambies algo sube el número en `sw.js` (`VERSION`), en `js/app.js` (`VERSION`) y en `index.html` (`homeVersion`): es el número que aparece arriba, junto al nombre.
 
 ## Archivos
 
