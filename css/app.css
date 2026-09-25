@@ -138,7 +138,11 @@ h1,h2,h3{margin:0;text-wrap:balance}
 .cam-flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity .25s}
 .cam-flash.on{opacity:.75;transition:none}
 .cam-top{position:absolute;top:0;left:0;right:0;display:flex;align-items:center;gap:10px;padding:calc(var(--sat) + 10px) 12px 26px;background:linear-gradient(rgba(0,0,0,.55),transparent)}
+.cam-top{align-items:flex-start}
 .cam-top .seg{flex:1;justify-content:center}
+.cam-seg{flex-wrap:nowrap;min-width:0}
+.cam-seg .seg-btn{min-height:38px;padding:6px 10px;font-size:13.5px;white-space:nowrap}
+.cam-top-right{display:flex;flex-direction:column;gap:8px;min-width:46px}
 .round-btn{width:46px;height:46px;border-radius:50%;border:0;background:rgba(0,0,0,.42);color:#fff;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;flex:none}
 .round-btn.lg{width:54px;height:54px}
 .round-btn[aria-pressed="true"]{background:#F4D35E;color:#221C04}

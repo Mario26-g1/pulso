@@ -139,8 +139,11 @@
   </div>
   <div class="cam-top">
     <button type="button" class="round-btn" data-act="back" aria-label="Cerrar cámara"><svg class="ic"><use href="#i-close"/></svg></button>
-    <div class="seg dark-seg" id="camKind" role="radiogroup" aria-label="Tipo de documento"></div>
-    <button type="button" class="round-btn" id="camTorch" aria-label="Linterna" aria-pressed="false" hidden><svg class="ic"><use href="#i-flash"/></svg></button>
+    <div class="seg dark-seg cam-seg" id="camKind" role="radiogroup" aria-label="Tipo de documento"></div>
+    <div class="cam-top-right">
+      <button type="button" class="round-btn" id="camOrient" aria-label="Poner el recuadro en vertical" hidden><svg class="ic"><use href="#i-rot"/></svg></button>
+      <button type="button" class="round-btn" id="camTorch" aria-label="Linterna" aria-pressed="false" hidden><svg class="ic"><use href="#i-flash"/></svg></button>
+    </div>
   </div>
   <div class="cam-hint-wrap"><p class="cam-hint" id="camHint">Abriendo la cámara…</p></div>
   <div class="cam-fallback" id="camFallback" hidden>

@@ -69,7 +69,8 @@ export class Camera {
           new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 3500))
         ]);
         const c = await blobToCanvas(blob, 3000);
-        if (c.width >= v.videoWidth) return c;
+        const sameOrient = (c.width >= c.height) === (v.videoWidth >= v.videoHeight);
+        if (sameOrient && Math.max(c.width, c.height) >= Math.max(v.videoWidth, v.videoHeight)) return c;
       } catch { /* se usa el cuadro del video */ }
     }
     const c = mk(v.videoWidth, v.videoHeight);

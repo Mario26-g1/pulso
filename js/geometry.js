@@ -273,7 +273,7 @@ function scoreComponent(lab, id, size, W, H, aspect, tap = false) {
   const score = fit ** 3
     * (0.7 + 0.3 * Math.min(1, frac / 0.15))
     * (edge === 2 ? 0.72 : edge === 1 ? 0.9 : 1)
-    * Math.min(1, solidity / 0.82)
+    * clamp(0.45 + solidity * 0.7, 0, 1)
     * aspectFactor(q, aspect);
   return { quad: q, score };
 }
@@ -427,17 +427,21 @@ export function detectQuad(source, sw, sh, maxDim = 480, kind = null) {
     Uint8Array.from(L, v => (v <= tL ? 1 : 0)),
     closedContours(R, G, B, W, H)
   ];
-  let best = null;
+  const cands = [];
   for (const m0 of masks) {
     const m = dilate(erode(m0, W, H), W, H);
     const { lab, sizes } = label(m, W, H);
     const ids = sizes.map((s, i) => [s, i]).slice(1).filter(([s]) => s > N * 0.018).sort((a, b) => b[0] - a[0]).slice(0, 3);
     for (const [size, id] of ids) {
       const r = scoreComponent(lab, id, size, W, H, aspect);
-      if (r && (!best || r.score > best.score)) best = r;
+      if (r && r.score >= 0.55) { r.area = polyArea(r.quad); cands.push(r); }
     }
   }
-  if (!best || best.score < 0.55) return null;
+  if (!cands.length) return null;
+  // Los documentos tienen rectángulos adentro (foto del DNI, recuadros): se prefiere el más grande
+  // siempre que su forma sea casi tan buena como la del mejor candidato.
+  const top = Math.max(...cands.map(c => c.score));
+  const best = cands.filter(c => c.score >= top * 0.78).sort((a, b) => b.area - a.area)[0];
   return { quad: best.quad.map(p => ({ x: clamp(p.x / k, 0, sw), y: clamp(p.y / k, 0, sh) })), score: best.score };
 }
 
@@ -513,4 +517,29 @@ function pointIn(q, x, y, margin = 0) {
     if (cr / len < -margin) inside = false;
   }
   return inside;
+}
+
+/** Busca el documento solo dentro de una zona (recuadro guía): ignora el fondo de alrededor. */
+let roiCanvas = null;
+export function detectInRegion(source, roi, maxDim = 480, kind = null) {
+  const w = roi.x1 - roi.x0, h = roi.y1 - roi.y0;
+  if (w < 20 || h < 20) return null;
+  const k = Math.min(1, 1000 / Math.max(w, h));
+  if (!roiCanvas) roiCanvas = document.createElement('canvas');
+  roiCanvas.width = Math.round(w * k); roiCanvas.height = Math.round(h * k);
+  roiCanvas.getContext('2d').drawImage(source, roi.x0, roi.y0, w, h, 0, 0, roiCanvas.width, roiCanvas.height);
+  const r = detectQuad(roiCanvas, roiCanvas.width, roiCanvas.height, maxDim, kind);
+  if (!r) return null;
+  return { quad: r.quad.map(p => ({ x: roi.x0 + p.x / k, y: roi.y0 + p.y / k })), score: r.score };
+}
+
+export function expandRect(r, f, W, H) {
+  const w = r.x1 - r.x0, h = r.y1 - r.y0;
+  return { x0: clamp(r.x0 - w * f, 0, W), y0: clamp(r.y0 - h * f, 0, H), x1: clamp(r.x1 + w * f, 0, W), y1: clamp(r.y1 + h * f, 0, H) };
+}
+
+export const rectQuad = r => [{ x: r.x0, y: r.y0 }, { x: r.x1, y: r.y0 }, { x: r.x1, y: r.y1 }, { x: r.x0, y: r.y1 }];
+
+export function quadBox(q) {
+  return { x0: Math.min(...q.map(p => p.x)), y0: Math.min(...q.map(p => p.y)), x1: Math.max(...q.map(p => p.x)), y1: Math.max(...q.map(p => p.y)) };
 }
