@@ -205,6 +205,12 @@ h1,h2,h3{margin:0;text-wrap:balance}
 .abtn{min-width:62px;min-height:52px;border:0;background:transparent;border-radius:12px;display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:12px;font-weight:600;color:var(--ink);cursor:pointer}
 .abtn:hover{background:var(--surface-2)}
 .action-bar .btn{min-height:50px;margin-left:4px}
+.dni-sheet{display:block;width:100%;margin:0 0 16px;padding:12px;border:1px solid var(--line);border-radius:16px;background:var(--surface);color:var(--ink);font:inherit;text-align:left;cursor:pointer;box-shadow:var(--shadow)}
+.dni-sheet:active{transform:scale(.995)}
+.dni-sheet-head{display:flex;flex-direction:column;gap:2px;margin:0 2px 10px}
+.dni-sheet-head strong{font-size:15px;font-weight:600}
+.dni-sheet-head small{color:var(--muted);font-size:13px}
+.dni-sheet canvas{display:block;width:100%;height:auto;border-radius:10px;background:#fff}
 .banner{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;padding:12px 14px;border-radius:14px;background:var(--mark-soft);color:var(--ink)}
 .banner.ok{background:var(--accent-soft)}
 .banner p{margin:0;flex:1 1 220px;font-size:14px}

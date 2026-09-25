@@ -89,6 +89,7 @@ export async function renderPage(page, { maxDim = 0, filter = page.filter, sigs 
     if (adjustOn) adjust(img, page.bright, page.contrast);
     x.putImageData(img, 0, 0);
   }
+  if (page.kind === 'dni') cardCorners(x, out.width, out.height);
   if (sigs && page.sigs && page.sigs.length) {
     for (const s of page.sigs) {
       const sc = await sigCanvas(s.sigId);
@@ -116,6 +117,25 @@ export async function ocrImage(page) {
   x.putImageData(img, 0, 0);
   whiteFrame(c);
   return c;
+}
+
+/**
+ * El DNI tiene las esquinas redondeadas (radio de 3,18 mm en una tarjeta de 85,6 mm):
+ * lo que queda fuera de esa curva es mesa, así que se pinta de blanco.
+ */
+function cardCorners(x, w, h) {
+  const r = Math.max(w, h) * 3.18 / 85.6;
+  x.save();
+  x.fillStyle = '#fff';
+  x.beginPath();
+  x.rect(0, 0, w, h);
+  x.moveTo(r, 0); x.lineTo(w - r, 0); x.arcTo(w, 0, w, r, r);
+  x.lineTo(w, h - r); x.arcTo(w, h, w - r, h, r);
+  x.lineTo(r, h); x.arcTo(0, h, 0, h - r, r);
+  x.lineTo(0, r); x.arcTo(0, 0, r, 0, r);
+  x.closePath();
+  x.fill('evenodd');
+  x.restore();
 }
 
 /** Blanquea un margen fino: restos del fondo en la orilla confunden al lector de texto. */

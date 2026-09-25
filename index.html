@@ -60,7 +60,7 @@
     <div class="brand">
       <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="7" width="26" height="18" rx="4" fill="none" stroke="currentColor" stroke-width="2.2"/><rect x="7" y="11" width="18" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".45"/><rect x="5" y="15" width="22" height="2.6" rx="1.3" class="logo-beam"/></svg>
       <h1 id="home-title">Copia Clara</h1>
-      <span class="ver-chip" id="homeVersion" title="Versión instalada">v2.6</span>
+      <span class="ver-chip" id="homeVersion" title="Versión instalada">v2.7</span>
     </div>
     <button type="button" class="icon-btn" data-act="settings" aria-label="Ajustes y privacidad"><svg class="ic"><use href="#i-gear"/></svg></button>
   </header>
@@ -156,7 +156,6 @@
     <label class="round-btn lg" for="inCamImport" aria-label="Importar de la galería"><svg class="ic"><use href="#i-img"/></svg></label>
     <button type="button" class="shutter" id="camShutter" aria-label="Tomar foto"><span class="shutter-ring" id="camRing"></span></button>
     <div class="cam-right">
-      <button type="button" class="auto-pill" id="camAuto" aria-pressed="false">Auto</button>
       <button type="button" class="done-btn" id="camDone" hidden><span class="done-thumb" id="camThumb"></span><span id="camCount">Listo</span></button>
     </div>
   </div>
@@ -201,6 +200,10 @@
           <button type="button" class="btn sm ghost" id="dniBannerNo">Ahora no</button>
         </div>
       </div>
+      <button type="button" class="dni-sheet" id="dniSheet" hidden aria-label="DNI anverso y reverso en una hoja. Toca para compartir el PDF">
+        <span class="dni-sheet-head"><strong>Anverso y reverso en una hoja</strong><small>Así sale en el PDF · toca para compartir</small></span>
+        <canvas id="dniSheetCv" aria-hidden="true"></canvas>
+      </button>
       <ol class="page-grid" id="pageGrid"></ol>
     </div>
   </div>

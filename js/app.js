@@ -10,7 +10,7 @@ import { SignaturePad } from './sign.js';
 import { recognize, findDni, ocrCached, preloadOcr } from './ocr.js';
 import { QUALITY, buildPdf, buildJpgs, mergePdfFiles } from './pdf.js';
 
-const VERSION = '2.6';
+const VERSION = '2.7';
 
 /* =================================================================== */
 /* Navegación: pila de pantallas y hojas, integrada con el botón atrás */
@@ -154,16 +154,22 @@ async function renderHome() {
 /* =================================================================== */
 
 const cam = new Camera($('#camVideo'));
-const live = { run: false, raf: 0, last: 0, quad: null, miss: 0, stable: 0, prevT: 0, shooting: false };
-let autoOn = settings.get('auto', false);
+// La cámara solo muestra un recuadro guía; los bordes se detectan después, sobre la foto.
+const live = { run: false, shooting: false };
 let guideOrient = settings.get('dniOrient', 'h');
 
-/** Recuadro guía del DNI en coordenadas de pantalla. */
+/** Recuadro guía en coordenadas de pantalla: DNI (horizontal o vertical), A4 o Carta. Libre: sin recuadro. */
 function guideRect(cw, ch) {
-  const r = 85.6 / 54;
+  const kind = session && session.kind;
   let w, h;
-  if (guideOrient === 'v') { h = Math.min(ch * 0.58, cw * 0.78 * r); w = h / r; }
-  else { w = Math.min(cw * 0.86, ch * 0.6 * r); h = w / r; }
+  if (kind === 'dni') {
+    const r = 85.6 / 54;
+    if (guideOrient === 'v') { h = Math.min(ch * 0.58, cw * 0.78 * r); w = h / r; }
+    else { w = Math.min(cw * 0.86, ch * 0.6 * r); h = w / r; }
+  } else if (kind === 'a4' || kind === 'letter') {
+    const r = kind === 'a4' ? 297 / 210 : 11 / 8.5;
+    h = Math.min(ch * 0.7, cw * 0.86 * r); w = h / r;
+  } else return null;
   return { x: (cw - w) / 2, y: (ch - h) / 2 - 20, w, h };
 }
 
@@ -180,6 +186,7 @@ function guideInVideo() {
   const m = coverMap();
   if (!m.vw) return null;
   const g = guideRect(m.cw, m.ch);
+  if (!g) return null;
   return {
     x0: clamp((g.x - m.ox) / m.s, 0, m.vw), y0: clamp((g.y - m.oy) / m.s, 0, m.vh),
     x1: clamp((g.x + g.w - m.ox) / m.s, 0, m.vw), y1: clamp((g.y + g.h - m.oy) / m.s, 0, m.vh)
@@ -216,11 +223,10 @@ function startCapture(kind, docId = null) {
   kindSeg($('#camKind'), kind, k => {
     session.kind = k; session.side = k === 'dni' ? 'anverso' : null;
     if (k === 'dni' && session.docId) { const ses = session; nextSide(ses.docId).then(sd => { if (session === ses && ses.kind === 'dni') { ses.side = sd; camHint(); } }); }
-    settings.set('lastKind', k); live.quad = null; camHint(); syncOrientBtn();
+    settings.set('lastKind', k); camHint(); syncOrientBtn(); drawOverlay();
   });
   syncOrientBtn();
   $('#camDone').hidden = true;
-  $('#camAuto').setAttribute('aria-pressed', String(autoOn));
   Nav.push('scr-camera', { onHide: stopCamera });
   openCamera();
 }
@@ -250,73 +256,33 @@ function setHint(t, ok = false) {
 
 function camHint() {
   if (!session) return;
-  const dni = session.kind === 'dni';
-  if (live.quad) setHint(autoOn ? 'No te muevas… se toma sola' : 'Documento detectado. Toca el botón para capturar.', true);
-  else if (dni) setHint(`Coloca el ${session.side || 'anverso'} del DNI dentro del recuadro`);
-  else setHint('Apunta al documento. Mejor sobre un fondo oscuro.');
+  if (session.kind === 'dni') setHint(`Coloca el ${session.side || 'anverso'} del DNI dentro del recuadro y toca el botón`);
+  else if (session.kind === 'free') setHint('Apunta al documento y toca el botón. Después ajustas las esquinas.');
+  else setHint('Coloca la hoja dentro del recuadro y toca el botón');
 }
 
 function startLive() {
-  stopLive();
-  live.run = true; live.quad = null; live.miss = 0; live.stable = 0; live.prevT = performance.now();
-  const loop = () => {
-    if (!live.run) return;
-    live.raf = requestAnimationFrame(loop);
-    const now = performance.now();
-    if (now - live.last < 150) return;
-    const dt = now - live.last; live.last = now;
-    const v = cam.video;
-    if (!session || v.readyState < 2 || !v.videoWidth) return;
-    let r = null;
-    if (session.kind === 'dni') {
-      const g = guideInVideo();
-      if (g) r = detectInRegion(v, expandRect(g, 0.35, v.videoWidth, v.videoHeight), 256, 'dni');
-    } else r = detectQuad(v, v.videoWidth, v.videoHeight, 256, session.kind);
-    const diag = Math.hypot(v.videoWidth, v.videoHeight);
-    if (r) {
-      live.miss = 0;
-      if (live.quad) {
-        const q = orderQuad(r.quad);
-        const move = Math.max(...q.map((p, i) => dist(p, live.quad[i]))) / diag;
-        live.stable = move < 0.018 ? live.stable + dt : 0;
-        live.quad = move < 0.1 ? live.quad.map((p, i) => ({ x: p.x * 0.45 + q[i].x * 0.55, y: p.y * 0.45 + q[i].y * 0.55 })) : q;
-      } else { live.quad = orderQuad(r.quad); live.stable = 0; }
-    } else if (++live.miss > 4) { live.quad = null; live.stable = 0; }
-    drawOverlay();
-    camHint();
-    const need = 1100;
-    $('#camRing').style.setProperty('--p', autoOn && live.quad ? `${Math.min(360, live.stable / need * 360)}deg` : '0deg');
-    if (autoOn && live.quad && live.stable >= need && !live.shooting) shoot();
-  };
-  loop();
+  live.run = true;
+  camHint();
+  drawOverlay();
 }
 
 function stopLive() {
   live.run = false;
-  cancelAnimationFrame(live.raf);
   const o = $('#camOverlay'); o.getContext('2d').clearRect(0, 0, o.width, o.height);
-  $('#camRing').style.setProperty('--p', '0deg');
 }
 
+window.addEventListener('resize', () => { if (live.run) drawOverlay(); });
+
 function drawOverlay() {
-  const o = $('#camOverlay'), v = cam.video;
+  const o = $('#camOverlay');
   const cw = o.clientWidth, ch = o.clientHeight, dpr = Math.min(2, window.devicePixelRatio || 1);
   if (o.width !== Math.round(cw * dpr) || o.height !== Math.round(ch * dpr)) { o.width = Math.round(cw * dpr); o.height = Math.round(ch * dpr); }
   const x = o.getContext('2d');
   x.setTransform(dpr, 0, 0, dpr, 0, 0);
   x.clearRect(0, 0, cw, ch);
-  const vw = v.videoWidth, vh = v.videoHeight;
-  if (!vw) return;
-  const s = Math.max(cw / vw, ch / vh), ox = (cw - vw * s) / 2, oy = (ch - vh * s) / 2;
-  const map = p => ({ x: p.x * s + ox, y: p.y * s + oy });
-  if (live.quad) {
-    const q = live.quad.map(map);
-    x.beginPath(); x.moveTo(q[0].x, q[0].y); for (let i = 1; i < 4; i++) x.lineTo(q[i].x, q[i].y); x.closePath();
-    x.fillStyle = 'rgba(61,199,154,0.18)'; x.fill();
-    x.lineWidth = 3; x.strokeStyle = '#3DC79A'; x.stroke();
-    for (const p of q) { x.beginPath(); x.arc(p.x, p.y, 6, 0, Math.PI * 2); x.fillStyle = '#fff'; x.fill(); }
-  } else if (session && session.kind === 'dni') {
-    const g = guideRect(cw, ch);
+  const g = guideRect(cw, ch);
+  if (g) {
     x.fillStyle = 'rgba(0,0,0,0.28)';
     x.beginPath(); x.rect(0, 0, cw, ch);
     if (x.roundRect) x.roundRect(g.x, g.y, g.w, g.h, 14); else x.rect(g.x, g.y, g.w, g.h);
@@ -340,9 +306,7 @@ async function shoot() {
       x0: clamp(-m.ox / m.s, 0, vw) / vw, y0: clamp(-m.oy / m.s, 0, vh) / vh,
       x1: clamp((m.cw - m.ox) / m.s, 0, vw) / vw, y1: clamp((m.ch - m.oy) / m.s, 0, vh) / vh, va: vw / vh
     };
-    let zone = null;
-    if (live.quad) zone = quadBox(live.quad);
-    else if (session.kind === 'dni') zone = guideInVideo();
+    const zone = guideInVideo();
     const zoneN = zone ? { x0: zone.x0 / vw, y0: zone.y0 / vh, x1: zone.x1 / vw, y1: zone.y1 / vh, va: vw / vh } : null;
     const photo = await cam.capture();
     // La cámara suele fotografiar un encuadre más amplio que la vista previa:
@@ -363,20 +327,15 @@ async function shoot() {
       hint = {
         x0: (z.x0 - cx0) / src.width, y0: (z.y0 - cy0) / src.height,
         x1: (z.x1 - cx0) / src.width, y1: (z.y1 - cy0) / src.height,
-        va: src.width / src.height, fromQuad: !!live.quad
+        va: src.width / src.height
       };
     }
     openCrop({ src, kind: session.kind, side: session.side, mode: 'new', origin: 'camera', queue: [], hint });
   } catch { toast('No se pudo tomar la foto. Inténtalo otra vez.', 'err'); }
-  finally { live.shooting = false; live.stable = 0; $('#camShutter').disabled = false; }
+  finally { live.shooting = false; $('#camShutter').disabled = false; }
 }
 
 $('#camShutter').addEventListener('click', shoot);
-$('#camAuto').addEventListener('click', () => {
-  autoOn = !autoOn; settings.set('auto', autoOn);
-  $('#camAuto').setAttribute('aria-pressed', String(autoOn)); live.stable = 0; camHint();
-  toast(autoOn ? 'Captura automática activada' : 'Captura automática desactivada');
-});
 $('#camTorch').addEventListener('click', async () => {
   const on = !cam.torchOn, ok = await cam.setTorch(on);
   $('#camTorch').setAttribute('aria-pressed', String(ok && on));
@@ -386,7 +345,6 @@ $('#camDone').addEventListener('click', finishSession);
 $('#camOrient').addEventListener('click', () => {
   guideOrient = guideOrient === 'h' ? 'v' : 'h';
   settings.set('dniOrient', guideOrient);
-  live.quad = null; live.stable = 0;
   syncOrientBtn(); drawOverlay();
   toast(guideOrient === 'v' ? 'Recuadro vertical' : 'Recuadro horizontal');
 });
@@ -762,7 +720,48 @@ function renderDoc() {
   g.appendChild(li);
   $('#docExport').disabled = n === 0;
   $('#docText').disabled = n === 0;
+  drawDniSheet();
 }
+
+/** Vista previa del DNI: anverso arriba y reverso abajo, como sale en el PDF. */
+let dniSheetToken = 0;
+async function drawDniSheet() {
+  const btn = $('#dniSheet'), token = ++dniSheetToken;
+  const front = cur.pages.find(p => p.kind === 'dni' && p.side !== 'reverso');
+  const back = cur.pages.find(p => p.kind === 'dni' && p.side === 'reverso');
+  if (!front || !back) { btn.hidden = true; return; }
+  try {
+    const [a, b] = await Promise.all([renderPage(front, { maxDim: 900 }), renderPage(back, { maxDim: 900 })]);
+    if (token !== dniSheetToken) return;
+    // Cada cara se muestra horizontal, como una tarjeta.
+    const land = c => {
+      if (c.width >= c.height) return c;
+      const r = mk(c.height, c.width), x = r.getContext('2d');
+      x.translate(r.width / 2, r.height / 2); x.rotate(-Math.PI / 2); x.drawImage(c, -c.width / 2, -c.height / 2);
+      return r;
+    };
+    const fa = land(a), fb = land(b);
+    const W = 900, pad = 36, gap = 30, cw = W - pad * 2, ch = Math.round(cw * 54 / 85.6);
+    const cv = $('#dniSheetCv');
+    cv.width = W; cv.height = pad * 2 + ch * 2 + gap;
+    const x = cv.getContext('2d');
+    x.fillStyle = '#fff'; x.fillRect(0, 0, cv.width, cv.height);
+    for (const [img, y] of [[fa, pad], [fb, pad + ch + gap]]) {
+      x.save();
+      x.shadowColor = 'rgba(0,0,0,.18)'; x.shadowBlur = 14; x.shadowOffsetY = 3;
+      const rr = cw * 3.18 / 85.6;
+      x.fillStyle = '#fff'; x.beginPath();
+      if (x.roundRect) x.roundRect(pad, y, cw, ch, rr); else x.rect(pad, y, cw, ch);
+      x.fill();
+      x.restore();
+      x.save(); x.beginPath();
+      if (x.roundRect) x.roundRect(pad, y, cw, ch, rr); else x.rect(pad, y, cw, ch);
+      x.clip(); x.drawImage(img, pad, y, cw, ch); x.restore();
+    }
+    btn.hidden = false;
+  } catch { btn.hidden = true; }
+}
+$('#dniSheet').addEventListener('click', () => { openExport(); const c = $('#expDni'); if (c) c.checked = true; });
 
 $('#docName').addEventListener('change', async e => {
   const v = e.target.value.trim();

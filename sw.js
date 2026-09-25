@@ -1,6 +1,6 @@
 // Copia Clara · guarda la app en el celular para que funcione sin internet.
 // Al cambiar cualquier archivo, sube VERSION para que los celulares descarguen la nueva versión.
-const VERSION = 'v2.6.0';
+const VERSION = 'v2.7.0';
 const CORE = `copia-clara-core-${VERSION}`;
 const EXTRA = 'copia-clara-extra-v2';   // lector de texto y unión de PDF: se guardan al usarse
 const FILES = [

@@ -1,11 +1,12 @@
-# Copia Clara 2.6
+# Copia Clara 2.7
 
 Escáner de DNI y documentos que funciona dentro del celular. Las fotos, el texto leído y los PDF se procesan en el propio teléfono: no hay servidor, cuentas ni publicidad.
 
 ## Qué trae
 
-- **Cámara en vivo** con detección de bordes, captura automática opcional, recuadro guía del DNI horizontal o vertical (al capturar, la foto queda con el mismo encuadre que ves en pantalla y se recorta sola) y linterna (si el celular la tiene).
+- **Cámara con recuadro guía** para DNI (horizontal o vertical), A4 y Carta. Al capturar, la foto queda con el mismo encuadre que ves en pantalla y los bordes se detectan sobre la foto. Linterna si el celular la tiene.
 - **Recorte preciso**: detecta el documento, afina las esquinas, **toca el documento para encontrarlo en fondos estampados**, lupa al arrastrar, girar, cambiar el tipo (DNI, A4, Carta, libre).
+- **DNI en una hoja**: en el documento se ve el anverso y el reverso juntos, como salen en el PDF. Las esquinas redondeadas del DNI quedan en blanco, sin restos de la mesa.
 - **Filtros**: Documento (quita sombras y deja el papel blanco), Mejorado (para DNI: quita sombras y el tinte amarillo de la luz sin perder el color de la tarjeta), Original, Grises, Blanco y negro, más brillo y contraste.
 - **Historial** guardado en el celular, con opción de no guardar nada.
 - **Leer texto (OCR)** en español, sin internet después de la primera vez. Nombra el archivo con el número de DNI.
