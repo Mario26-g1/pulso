@@ -10,7 +10,7 @@ import { SignaturePad } from './sign.js';
 import { recognize, findDni, ocrCached, preloadOcr } from './ocr.js';
 import { QUALITY, buildPdf, buildJpgs, mergePdfFiles } from './pdf.js';
 
-const VERSION = '2.3';
+const VERSION = '2.4';
 
 /* =================================================================== */
 /* Navegación: pila de pantallas y hojas, integrada con el botón atrás */
@@ -192,10 +192,30 @@ function syncOrientBtn() {
   b.setAttribute('aria-label', guideOrient === 'h' ? 'Poner el recuadro en vertical' : 'Poner el recuadro en horizontal');
 }
 
+/** Qué lado del DNI toca: si el documento ya tiene más anversos que reversos, el reverso. */
+async function nextSide(docId) {
+  if (!docId) return 'anverso';
+  try {
+    const doc = await store.getDoc(docId);
+    if (!doc) return 'anverso';
+    let a = 0, r = 0;
+    for (const id of doc.pageIds) {
+      const p = await store.getPage(id);
+      if (p && p.kind === 'dni') { if (p.side === 'reverso') r++; else a++; }
+    }
+    return a > r ? 'reverso' : 'anverso';
+  } catch { return 'anverso'; }
+}
+
 function startCapture(kind, docId = null) {
   session = { docId, origin: docId ? 'doc' : 'home', kind, side: kind === 'dni' ? 'anverso' : null, added: 0 };
+  if (docId && kind === 'dni') {
+    const ses = session;
+    nextSide(docId).then(sd => { if (session === ses && ses.kind === 'dni' && !ses.added) { ses.side = sd; camHint(); } });
+  }
   kindSeg($('#camKind'), kind, k => {
     session.kind = k; session.side = k === 'dni' ? 'anverso' : null;
+    if (k === 'dni' && session.docId) { const ses = session; nextSide(ses.docId).then(sd => { if (session === ses && ses.kind === 'dni') { ses.side = sd; camHint(); } }); }
     settings.set('lastKind', k); live.quad = null; camHint(); syncOrientBtn();
   });
   syncOrientBtn();
@@ -617,7 +637,7 @@ async function acceptCrop() {
       return;
     }
     const page = await createPage(crop.src, q, crop.kind, crop.side);
-    toast(`Página ${session.added} añadida`);
+    toast(`Página ${session.count || session.added} añadida`);
     if (crop.origin === 'camera') updateDoneBtn(page.thumbBlob);
     await nextInQueue(true);
   } catch (e) {
@@ -648,7 +668,7 @@ async function startImport(files, docId) {
   files = [...files].filter(f => /^image\//.test(f.type) || /\.(jpe?g|png|webp|heic|heif)$/i.test(f.name));
   if (!files.length) { toast('Elige fotos en JPG o PNG.', 'err'); return; }
   const kind = settings.get('lastKind', 'a4');
-  session = { docId, origin: docId ? 'doc' : 'home', kind, side: kind === 'dni' ? 'anverso' : null, added: 0 };
+  session = { docId, origin: docId ? 'doc' : 'home', kind, side: kind === 'dni' ? await nextSide(docId) : null, added: 0 };
   await importQueue(files, 'import');
 }
 
@@ -683,7 +703,7 @@ async function createPage(src, quad, kind, side) {
   doc.updatedAt = Date.now();
   if (doc.pageIds.length === 1) doc.thumbBlob = page.thumbBlob;
   await store.putDoc(doc);
-  session.added++;
+  session.added++; session.count = doc.pageIds.length;
   if (kind === 'dni') session.side = page.side === 'anverso' ? 'reverso' : 'anverso';
   return page;
 }
