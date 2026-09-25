@@ -1,4 +1,4 @@
-# Copia Clara 2.4
+# Copia Clara 2.5
 
 Escáner de DNI y documentos que funciona dentro del celular. Las fotos, el texto leído y los PDF se procesan en el propio teléfono: no hay servidor, cuentas ni publicidad.
 
